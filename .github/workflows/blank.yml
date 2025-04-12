@@ -1,0 +1,180 @@
+📁 gold-signal-dashboard/
+├── public/
+│   └── index.html
+├── server.js
+├── package.json
+└── .gitignore
+
+
+// public/index.html
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Gold Signal Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 text-gray-900 font-sans">
+  <div class="max-w-5xl mx-auto p-6">
+    <h1 class="text-3xl font-bold mb-4">Gold (XAU/USD) Trading Signal Dashboard</h1>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div class="bg-white shadow-lg rounded-2xl p-6">
+        <h2 class="text-xl font-semibold mb-4">Current Signal</h2>
+        <div id="signal" class="text-2xl font-bold text-gray-600">Loading...</div>
+        <div class="mt-4">
+          <p><strong>Price:</strong> <span id="price">--</span></p>
+          <p><strong>50 EMA:</strong> <span id="ema50">--</span></p>
+          <p><strong>200 EMA:</strong> <span id="ema200">--</span></p>
+          <p><strong>RSI (14):</strong> <span id="rsi">--</span></p>
+        </div>
+      </div>
+      <div class="bg-white shadow-lg rounded-2xl p-6">
+        <h2 class="text-xl font-semibold mb-4">Gold Chart</h2>
+        <div class="tradingview-widget-container">
+          <div id="tradingview_xauusd"></div>
+          <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+          <script type="text/javascript">
+            new TradingView.widget({
+              "width": "100%",
+              "height": 400,
+              "symbol": "OANDA:XAUUSD",
+              "interval": "60",
+              "timezone": "Etc/UTC",
+              "theme": "light",
+              "style": "1",
+              "locale": "en",
+              "toolbar_bg": "#f1f3f6",
+              "enable_publishing": false,
+              "container_id": "tradingview_xauusd"
+            });
+          </script>
+        </div>
+      </div>
+    </div>
+    <div class="mt-10 text-sm text-gray-500 text-center">
+      *This dashboard uses Yahoo Finance data via a backend API.*
+    </div>
+  </div>
+  <script>
+    async function fetchSignal() {
+      try {
+        const res = await fetch('/api/signal');
+        const data = await res.json();
+        const { price, ema50, ema200, rsi } = data;
+
+        let signal = 'Hold';
+        if (price > ema50 && price > ema200 && rsi > 50 && rsi < 70) signal = 'Buy';
+        else if (price < ema50 && price < ema200 && rsi < 50 && rsi > 30) signal = 'Sell';
+
+        document.getElementById('price').innerText = `$${price}`;
+        document.getElementById('ema50').innerText = `$${ema50}`;
+        document.getElementById('ema200').innerText = `$${ema200}`;
+        document.getElementById('rsi').innerText = `${rsi}`;
+        const signalEl = document.getElementById('signal');
+        signalEl.innerText = signal;
+        signalEl.classList.remove('text-green-600', 'text-red-600', 'text-gray-600');
+        signalEl.classList.add(signal === 'Buy' ? 'text-green-600' : signal === 'Sell' ? 'text-red-600' : 'text-gray-600');
+      } catch (err) {
+        console.error('Error fetching signal:', err);
+      }
+    }
+
+    fetchSignal();
+    setInterval(fetchSignal, 60000);
+  </script>
+</body>
+</html>
+
+
+// server.js
+
+const express = require('express');
+const cors = require('cors');
+const yahooFinance = require('yahoo-finance2').default;
+const path = require('path');
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+app.use(cors());
+app.use(express.static(path.join(__dirname, 'public')));
+
+app.get('/api/signal', async (req, res) => {
+  try {
+    const quote = await yahooFinance.quote('XAUUSD=X');
+    const history = await yahooFinance.historical('XAUUSD=X', {
+      period1: new Date(Date.now() - 100 * 24 * 60 * 60 * 1000),
+      interval: '1d',
+    });
+
+    const closePrices = history.map(d => d.close).reverse();
+    const price = quote.regularMarketPrice;
+
+    const ema = (data, period) => {
+      const k = 2 / (period + 1);
+      return data.reduce((acc, val, i) => {
+        if (i === 0) return [val];
+        acc.push(val * k + acc[i - 1] * (1 - k));
+        return acc;
+      }, []);
+    };
+
+    const avg = (arr) => arr.reduce((a, b) => a + b, 0) / arr.length;
+
+    const rsi = (data, period = 14) => {
+      let gains = 0;
+      let losses = 0;
+      for (let i = 1; i <= period; i++) {
+        const diff = data[i] - data[i - 1];
+        if (diff >= 0) gains += diff;
+        else losses -= diff;
+      }
+      const rs = gains / (losses || 1);
+      return 100 - 100 / (1 + rs);
+    };
+
+    const ema50 = ema(closePrices, 50).pop();
+    const ema200 = ema(closePrices, 200).pop();
+    const rsiVal = rsi(closePrices.slice(0, 15));
+
+    res.json({
+      price: parseFloat(price.toFixed(2)),
+      ema50: parseFloat(ema50.toFixed(2)),
+      ema200: parseFloat(ema200.toFixed(2)),
+      rsi: parseFloat(rsiVal.toFixed(2)),
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch data' });
+  }
+});
+
+app.listen(PORT, () => {
+  console.log(`Server is running at http://localhost:${PORT}`);
+});
+
+
+// package.json
+
+{
+  "name": "gold-signal-dashboard",
+  "version": "1.0.0",
+  "description": "A web dashboard to display live gold trading signals using Yahoo Finance.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "yahoo-finance2": "^2.3.0"
+  }
+}
+
+
+// .gitignore
+
+node_modules
+.env
