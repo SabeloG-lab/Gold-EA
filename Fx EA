@@ -1,73 +1,13 @@
-gold-signal-dashboard/
+📁 gold-signal-dashboard/
 ├── public/
 │   └── index.html
 ├── server.js
 ├── package.json
 └── .gitignore
-const express = require('express');
-const cors = require('cors');
-const yahooFinance = require('yahoo-finance2').default;
-const path = require('path');
 
-const app = express();
-const PORT = process.env.PORT || 3000;
 
-app.use(cors());
-app.use(express.static(path.join(__dirname, 'public')));
+// public/index.html
 
-app.get('/api/signal', async (req, res) => {
-  try {
-    const quote = await yahooFinance.quote('XAUUSD=X');
-    const history = await yahooFinance.historical('XAUUSD=X', {
-      period1: new Date(Date.now() - 100 * 24 * 60 * 60 * 1000),
-      interval: '1d',
-    });
-
-    const closePrices = history.map(d => d.close).reverse();
-    const price = quote.regularMarketPrice;
-
-    const ema = (data, period) => {
-      const k = 2 / (period + 1);
-      return data.reduce((acc, val, i) => {
-        if (i === 0) return [val];
-        acc.push(val * k + acc[i - 1] * (1 - k));
-        return acc;
-      }, []);
-    };
-
-    const avg = (arr) => arr.reduce((a, b) => a + b, 0) / arr.length;
-
-    const rsi = (data, period = 14) => {
-      let gains = 0;
-      let losses = 0;
-      for (let i = 1; i <= period; i++) {
-        const diff = data[i] - data[i - 1];
-        if (diff >= 0) gains += diff;
-        else losses -= diff;
-      }
-      const rs = gains / (losses || 1);
-      return 100 - 100 / (1 + rs);
-    };
-
-    const ema50 = ema(closePrices, 50).pop();
-    const ema200 = ema(closePrices, 200).pop();
-    const rsiVal = rsi(closePrices.slice(0, 15));
-
-    res.json({
-      price: parseFloat(price.toFixed(2)),
-      ema50: parseFloat(ema50.toFixed(2)),
-      ema200: parseFloat(ema200.toFixed(2)),
-      rsi: parseFloat(rsiVal.toFixed(2)),
-    });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Failed to fetch data' });
-  }
-});
-
-app.listen(PORT, () => {
-  console.log(`Server is running at http://localhost:${PORT}`);
-});
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -146,6 +86,78 @@ app.listen(PORT, () => {
   </script>
 </body>
 </html>
+
+
+// server.js
+
+const express = require('express');
+const cors = require('cors');
+const yahooFinance = require('yahoo-finance2').default;
+const path = require('path');
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+app.use(cors());
+app.use(express.static(path.join(__dirname, 'public')));
+
+app.get('/api/signal', async (req, res) => {
+  try {
+    const quote = await yahooFinance.quote('XAUUSD=X');
+    const history = await yahooFinance.historical('XAUUSD=X', {
+      period1: new Date(Date.now() - 100 * 24 * 60 * 60 * 1000),
+      interval: '1d',
+    });
+
+    const closePrices = history.map(d => d.close).reverse();
+    const price = quote.regularMarketPrice;
+
+    const ema = (data, period) => {
+      const k = 2 / (period + 1);
+      return data.reduce((acc, val, i) => {
+        if (i === 0) return [val];
+        acc.push(val * k + acc[i - 1] * (1 - k));
+        return acc;
+      }, []);
+    };
+
+    const avg = (arr) => arr.reduce((a, b) => a + b, 0) / arr.length;
+
+    const rsi = (data, period = 14) => {
+      let gains = 0;
+      let losses = 0;
+      for (let i = 1; i <= period; i++) {
+        const diff = data[i] - data[i - 1];
+        if (diff >= 0) gains += diff;
+        else losses -= diff;
+      }
+      const rs = gains / (losses || 1);
+      return 100 - 100 / (1 + rs);
+    };
+
+    const ema50 = ema(closePrices, 50).pop();
+    const ema200 = ema(closePrices, 200).pop();
+    const rsiVal = rsi(closePrices.slice(0, 15));
+
+    res.json({
+      price: parseFloat(price.toFixed(2)),
+      ema50: parseFloat(ema50.toFixed(2)),
+      ema200: parseFloat(ema200.toFixed(2)),
+      rsi: parseFloat(rsiVal.toFixed(2)),
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch data' });
+  }
+});
+
+app.listen(PORT, () => {
+  console.log(`Server is running at http://localhost:${PORT}`);
+});
+
+
+// package.json
+
 {
   "name": "gold-signal-dashboard",
   "version": "1.0.0",
@@ -160,5 +172,9 @@ app.listen(PORT, () => {
     "yahoo-finance2": "^2.3.0"
   }
 }
+
+
+// .gitignore
+
 node_modules
 .env
